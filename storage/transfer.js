@@ -102,8 +102,6 @@ function createTransferJob (srcBucketName, destBucketName, date, time, descripti
       transferJob.description = description;
     }
 
-    console.log(JSON.stringify(transferJob, null, 2));
-
     storagetransfer.transferJobs.create({
       auth: authClient,
       resource: transferJob
@@ -112,7 +110,6 @@ function createTransferJob (srcBucketName, destBucketName, date, time, descripti
         return callback(err);
       }
 
-      console.log(JSON.stringify(job, null, 2));
       console.log('Created job');
       return callback(null, job);
     });
@@ -120,14 +117,131 @@ function createTransferJob (srcBucketName, destBucketName, date, time, descripti
 }
 // [END create_transfer_job]
 
-// [START get_job_status]
+// [START get_transfer_job]
 /**
- * Review the transfer operations associated with a transfer job.
+ * Get a transfer job.
  *
- * @param {string} [jobName] An optional job name to filter by.
+ * @param {string} jobName The name of the transfer job to get.
  * @param {function} callback The callback function.
  */
-function getJobStatus (jobName, callback) {
+function getTransferJob (jobName, callback) {
+  if (!jobName) {
+    return callback(new Error('"jobName" is required!'));
+  }
+
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    storagetransfer.transferJobs.get({
+      auth: authClient,
+      projectId: process.env.GCLOUD_PROJECT,
+      jobName: jobName
+    }, function (err, transferJob) {
+      if (err) {
+        return callback(err);
+      }
+
+      console.log('Found transfer job: %s', transferJob.name);
+      return callback(null, transferJob);
+    });
+  });
+}
+// [END get_transfer_job]
+
+// [START update_transfer_job]
+/**
+ * Get a transfer job.
+ *
+ * @param {string} jobName The name of the transfer job to get.
+ * @param {string} field The field to update. Can be description, status, or transferSpec.
+ * @param {string} value The new value for the field.
+ * @param {function} callback The callback function.
+ */
+function updateTransferJob (jobName, field, value, callback) {
+  if (!jobName) {
+    return callback(new Error('"jobName" is required!'));
+  } else if (!field) {
+    return callback(new Error('"field" is required!'));
+  } else if (!value) {
+    return callback(new Error('"value" is required!'));
+  }
+
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    var patchRequest = {
+      projectId: process.env.GCLOUD_PROJECT,
+      transferJob: {
+        name: jobName
+      },
+      updateTransferJobFieldMask: field
+    };
+
+    if (field === 'description') {
+      patchRequest.transferJob.description = value;
+    } else if (field === 'status') {
+      patchRequest.transferJob.status = value;
+    } else if (field === 'transferSpec') {
+      patchRequest.transferJob.transferSpec = JSON.parse(value);
+    }
+
+    storagetransfer.transferJobs.patch({
+      auth: authClient,
+      jobName: jobName,
+      resource: patchRequest
+    }, function (err, transferJob) {
+      if (err) {
+        return callback(err);
+      }
+
+      console.log('Updated transfer job: %s', transferJob.name);
+      return callback(null, transferJob);
+    });
+  });
+}
+// [END update_transfer_job]
+
+// [START list_transfer_jobs]
+/**
+ * List transfer jobs for the authenticated project.
+ *
+ * @param {function} callback The callback function.
+ */
+function listTransferJobs (callback) {
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    storagetransfer.transferJobs.list({
+      auth: authClient,
+      filter: JSON.stringify({ project_id: process.env.GCLOUD_PROJECT })
+    }, function (err, result) {
+      if (err) {
+        return callback(err);
+      } else if (!result.transferJobs) {
+        return callback(null, []);
+      }
+
+      console.log('Found %d jobs!', result.transferJobs.length);
+      return callback(null, result.transferJobs);
+    });
+  });
+}
+// [END list_transfer_jobs]
+
+// [START list_transfer_operations]
+/**
+ * List transfer operations in the authenticated project.
+ *
+ * @param {string} [jobName] An optional job name by which to filter results.
+ * @param {function} callback The callback function.
+ */
+function listTransferOperations (jobName, callback) {
   auth(function (err, authClient) {
     if (err) {
       return callback(err);
@@ -146,44 +260,185 @@ function getJobStatus (jobName, callback) {
       filter: JSON.stringify(filter),
       auth: authClient
     }, function (err, result, apiResponse) {
-      if (err || apiResponse.statusCode === 404) {
-        return callback(err || 'Not Found!');
-      } else if (!result.operations || !result.operations.length) {
-        return callback(null, 'No operations found.');
+      if (err) {
+        return callback(err);
+      } else if (!result.operations) {
+        return callback(null, []);
       }
 
       console.log('Found %d operations!', result.operations.length);
-      return callback(null, result);
+      return callback(null, result.operations);
     });
   });
 }
-// [END get_job_status]
+// [END list_transfer_operations]
+
+// [START get_transfer_operation]
+/**
+ * Get the specified transfer operation.
+ *
+ * @param {string} transferOperationName The name of the transfer operation.
+ * @param {function} callback The callback function.
+ */
+function getTransferOperation (transferOperationName, callback) {
+  if (!transferOperationName) {
+    return callback(new Error('"transferOperationName" is required!'));
+  }
+
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    storagetransfer.transferOperations.get({
+      name: transferOperationName,
+      auth: authClient
+    }, function (err, transferOperation) {
+      if (err) {
+        return callback(err);
+      }
+
+      console.log('Found transfer operation: %s', transferOperation);
+      return callback(null, transferOperation);
+    });
+  });
+}
+// [END get_transfer_operation]
+
+// [START pause_transfer_operation]
+/**
+ * Pause the specified transfer operation.
+ *
+ * @param {string} transferOperationName The name of the transfer operation.
+ * @param {function} callback The callback function.
+ */
+function pauseTransferOperation (transferOperationName, callback) {
+  if (!transferOperationName) {
+    return callback(new Error('"transferOperationName" is required!'));
+  }
+
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    storagetransfer.transferOperations.pause({
+      name: transferOperationName,
+      auth: authClient
+    }, function (err, transferOperation) {
+      if (err) {
+        return callback(err);
+      }
+
+      console.log('Found transfer operation: %s', transferOperation);
+      return callback(null, transferOperation);
+    });
+  });
+}
+// [END pause_transfer_operation]
+
+// [START resume_transfer_operation]
+/**
+ * Pause the specified transfer operation.
+ *
+ * @param {string} transferOperationName The name of the transfer operation.
+ * @param {function} callback The callback function.
+ */
+function resumeTransferOperation (transferOperationName, callback) {
+  if (!transferOperationName) {
+    return callback(new Error('"transferOperationName" is required!'));
+  }
+
+  auth(function (err, authClient) {
+    if (err) {
+      return callback(err);
+    }
+
+    storagetransfer.transferOperations.resume({
+      name: transferOperationName,
+      auth: authClient
+    }, function (err, transferOperation) {
+      if (err) {
+        return callback(err);
+      }
+
+      console.log('Found transfer operation: %s', transferOperation);
+      return callback(null, transferOperation);
+    });
+  });
+}
+// [END resume_transfer_operation]
 
 // [START usage]
 function printUsage () {
-  console.log('Usage: node encryption COMMAND [ARGS...]');
-  console.log('\nCommands:\n');
-  console.log('\tcreate SRC_BUCKET_NAME DEST_BUCKET_NAME DATE TIME [DESCRIPTION]');
-  console.log('\tstatus JOB_ID');
+  console.log('Usage: node encryption RESOURCE COMMAND [ARGS...]');
+  console.log('\nResources:\n');
+  console.log('    jobs');
+  console.log('\n\tCommands:\n');
+  console.log('\t\tcreate SRC_BUCKET_NAME DEST_BUCKET_NAME DATE TIME [DESCRIPTION]');
+  console.log('\t\tget JOB_NAME');
+  console.log('\t\tlist');
+  console.log('\t\tset JOB_NAME FIELD VALUE');
+  console.log('\n    operations');
+  console.log('\n\tCommands:\n');
+  console.log('\t\tlist [JOB_NAME]');
+  console.log('\t\tget TRANSFER_NAME');
+  console.log('\t\tpause TRANSFER_NAME');
+  console.log('\t\tresume TRANSFER_NAME');
   console.log('\nExamples:\n');
-  console.log('\tnode transfer create my-bucket my-other-bucket 2016/08/12 16:30 "Move my files"');
-  console.log('\tnode transfer status 1234567890');
+  console.log('\tnode transfer jobs create my-bucket my-other-bucket 2016/08/12 16:30 "Move my files"');
+  console.log('\tnode transfer jobs get transferJobs/123456789012345678');
+  console.log('\tnode transfer jobs list');
+  console.log('\tnode transfer jobs set transferJobs/123456789012345678 description "My new description"');
+  console.log('\tnode transfer jobs set transferJobs/123456789012345678 status DISABLED');
+  console.log('\tnode transfer operations list');
+  console.log('\tnode transfer operations list transferJobs/123456789012345678');
+  console.log('\tnode transfer operations get transferOperations/123456789012345678');
+  console.log('\tnode transfer operations pause transferOperations/123456789012345678');
+  console.log('\tnode transfer operations resume transferOperations/123456789012345678');
 }
 // [END usage]
 
 // The command-line program
 var program = {
   createTransferJob: createTransferJob,
-  getJobStatus: getJobStatus,
+  getTransferJob: getTransferJob,
+  listTransferJobs: listTransferJobs,
+  updateTransferJob: updateTransferJob,
+  listTransferOperations: listTransferOperations,
+  getTransferOperation: getTransferOperation,
+  pauseTransferOperation: pauseTransferOperation,
+  resumeTransferOperation: resumeTransferOperation,
   printUsage: printUsage,
 
   // Executed when this program is run from the command-line
   main: function (args, cb) {
+    var resource = args.shift();
     var command = args.shift();
-    if (command === 'create') {
-      this.createTransferJob(args[0], args[1], args[2], args[3], args[4], cb);
-    } else if (command === 'status') {
-      this.getJobStatus(args[0], cb);
+    if (resource === 'jobs') {
+      if (command === 'create') {
+        this.createTransferJob(args[0], args[1], args[2], args[3], args[4], cb);
+      } else if (command === 'get') {
+        this.getTransferJob(args[0], cb);
+      } else if (command === 'list') {
+        this.listTransferJobs(cb);
+      } else if (command === 'set') {
+        this.updateTransferJob(args[0], args[1], args[2], cb);
+      } else {
+        this.printUsage();
+      }
+    } else if (resource === 'operations') {
+      if (command === 'list') {
+        this.listTransferOperations(args[0], cb);
+      } else if (command === 'get') {
+        this.getTransferOperation(args[0], cb);
+      } else if (command === 'pause') {
+        this.pauseTransferOperation(args[0], cb);
+      } else if (command === 'resume') {
+        this.resumeTransferOperation(args[0], cb);
+      } else {
+        this.printUsage();
+      }
     } else {
       this.printUsage();
     }
